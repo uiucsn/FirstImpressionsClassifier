@@ -1,5 +1,6 @@
 from preprocess import *
 import time
+from contextlib import redirect_stdout
 
 raw_LC_path = "/Users/agagliano/Documents/Research/HostClassifier/data/3k_NONGP/lcs_notrigger"
 metafile = "/Users/agagliano/Documents/Research/HostClassifier/data/3k_NONGP/nongp_3k_truthcatalog.txt"
@@ -59,20 +60,20 @@ batch_size = 128
 #compile the model with specific choices for the log
 model.compile(loss='sparse_categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
 
-# fit the data!
-history = model.fit(X_train, y_train, validation_data=(X_test, y_test), batch_size=batch_size, epochs=100, verbose=2)
-summary = model.summary()
-
 #write all model info to file!
 textPath = '/Users/agagliano/Documents/Research/HostClassifier/packages/phast/text/'
-text_file = open(textPath + "/Model_%i.txt"%ts, "wt")
-text_file.write(summary)
-textfile.write("Pad input arrays? %s"%pad)
-textfile.write("Use GP interpolation? %s"%GP)
-textfile.write("What bands input? %s"%band_stack)
-textfile.write("Training:"%band_stack)
-text_file.write(history)
-text_file.close()
+textfile = open(textPath + "/Model_%i.txt"%ts, "wt")
+
+textfile.write("Pad input arrays? %s\n"%pad)
+textfile.write("Use GP interpolation? %s\n"%GP)
+textfile.write("What bands input? %s\n\n"%band_stack)
+textfile.write("Training:\n")
+#write the training and the model summary to file
+with redirect_stdout(textfile):
+    # fit the data!
+    model.fit(X_train, y_train, validation_data=(X_test, y_test), batch_size=batch_size, epochs=100, verbose=2)
+    model.summary()
+textfile.close()
 
 # make predictions
 predictions = model.predict(X_test)
