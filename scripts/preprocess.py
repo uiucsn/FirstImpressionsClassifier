@@ -5,10 +5,6 @@ import matplotlib.pyplot as plt
 import glob
 import extinction
 from astropy.cosmology import Planck13 as cosmo
-import tensorflow as tf
-from tensorflow import keras
-from tensorflow.keras import layers, models
-from sklearn.metrics import confusion_matrix
 
 #The limiting magnitude of your survey
 MAG_LIM = 33.0

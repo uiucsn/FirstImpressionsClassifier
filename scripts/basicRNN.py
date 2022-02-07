@@ -1,17 +1,24 @@
 from preprocess import *
 import time
 from contextlib import redirect_stdout
+from gp import *
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers, models
+from sklearn.metrics import confusion_matrix
 
 raw_LC_path = "/Users/agagliano/Documents/Research/HostClassifier/data/3k_NONGP/lcs_notrigger"
 metafile = "/Users/agagliano/Documents/Research/HostClassifier/data/3k_NONGP/nongp_3k_truthcatalog.txt"
 metafile_Test = "/Users/agagliano/Documents/Research/HostClassifier/data/3k_NONGP/sn_3k_list_unblindedtestSet.txt" #get the CIDs of the train and test sets
 testCIDs = pd.read_csv(metafile_Test, delim_whitespace=True)['CID'].values
+savepath = '/Users/agagliano/Documents/Research/HostClassifier/packages/phast/plots'
 
-pad = True
-GP = False
+pad = False
+GP = True
 band_stack = 'g'
+bands = 'ugrizY'
+N_bands = len(bands)
 #timestamp
-
 
 # ts stores the time in seconds
 ts = int(time.time())
@@ -20,7 +27,7 @@ ts = int(time.time())
 fullDF = read_in_LC_data(metafile, raw_LC_path, format='SNANA')
 fullDF = shift_lc(fullDF)
 fullDF = correct_time_dilation(fullDF)
-fullDF = cut_lc(fullDF)
+#fullDF = cut_lc(fullDF)
 fullDF = calc_abs_mags(fullDF)
 fullDF = correct_extinction(fullDF, wvs)
 fullDF, encoding_dict = encode_classes(fullDF)
@@ -31,13 +38,16 @@ fullDF_train = fullDF[~fullDF['CID'].isin(testCIDs)]
 fullDF_test = fullDF[fullDF['CID'].isin(testCIDs)]
 
 if GP:
-    fullDF = getGPLCs(fullDF) ## not defined yet
+    fullDF = getGPLCs(fullDF, savepath=savepath+"/GP/", num_bands=N_bands) ## not defined yet
     #define a stackedInputs_test and a stackedInputs_train here
 
 #just do in a single band for now!
-if pad:
-    stackedInputs_test = stackInputs(fullDF_test, band_stack)
-    stackedInputs_train = stackInputs(fullDF_train, band_stack)
+#if pad:
+#    stackedInputs_test = stackInputs(fullDF_test, band_stack)
+#    stackedInputs_train = stackInputs(fullDF_train, band_stack)
+fullDF.to_csv("/Users/agagliano/Documents/Research/HostClassifier/data/DFwithFirstGPModel.tar.gz",index=False)
+#started at 1145am
+#ended at...
 
 #remove this step later -- dropping those that didn't make our quality cuts
 fullDF_train = fullDF_train[fullDF_train['CID'].isin(list(stackedInputs_train.keys()))]
@@ -52,7 +62,12 @@ y_test = fullDF_test['Type_ID'].values
 
 #build the model
 model = keras.Sequential()
+#model.add(layers.GRU(100, activation='sigmoid', return_sequences=True))
+#model.add(layers.Dropout(0.2, seed=42))
+#model.add(layers.BatchNormalization())
 model.add(layers.GRU(100, activation='sigmoid'))
+#model.add(layers.Dropout(0.2, seed=42))
+#model.add(layers.BatchNormalization())
 model.add(layers.Dense(6, activation='softmax')) #the number of classes
 
 batch_size = 128
@@ -68,6 +83,7 @@ textfile.write("Pad input arrays? %s\n"%pad)
 textfile.write("Use GP interpolation? %s\n"%GP)
 textfile.write("What bands input? %s\n\n"%band_stack)
 textfile.write("Training:\n")
+
 #write the training and the model summary to file
 with redirect_stdout(textfile):
     # fit the data!
@@ -90,7 +106,6 @@ df_cm.index.name = 'True Label'
 df_cm.columns.name = 'Predicted Label'
 
 #plot it here:
-savepath = '/Users/agagliano/Documents/Research/HostClassifier/packages/phast/plots'
 plt.figure(figsize = (10,7))
 sns.set(font_scale=2)
 g = sns.heatmap(df_cm, cmap="Reds", annot=True, fmt=".2f", annot_kws={"size": 30}, linewidths=1, linecolor='black', cbar_kws={"ticks": [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]}, vmin=0.29, vmax=0.91)# font size
@@ -98,3 +113,5 @@ g.set_xticklabels(g.get_xticklabels(), fontsize = 20)
 g.set_yticklabels(g.get_yticklabels(), fontsize = 20)
 g.set_title("Test Set, Accuracy = %.2f%%"%accTest)
 plt.savefig(savepath + "/vanilla_rnn_LSSTexp_%i.png"%ts, dpi=200, bbox_inches='tight')
+
+########################### sandbox testing below! ###########################
