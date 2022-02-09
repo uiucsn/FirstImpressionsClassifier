@@ -52,7 +52,7 @@ class Multiband(tinygp.kernels.Kernel):
         return self.band_kernel[b1, b2] * self.time_kernel.evaluate(t1, t2)
 
 
-def gp_withPad(df, savepath='./',plotpath='./', bands='ugrizY', ts='0000000', fn='GPSet'):
+def gp_withPad(df, savepath='./',plotpath='./', bands='ugrizY', Nstp=100, ts='0000000', fn='GPSet'):
     """Short summary.
 
     Parameters
@@ -77,7 +77,6 @@ def gp_withPad(df, savepath='./',plotpath='./', bands='ugrizY', ts='0000000', fn
 
     """
     #num_bands = len(np.unique(band_idx))
-    Npt = 100
     num_bands = len(bands)
     GP_dict = {}
 
@@ -90,14 +89,14 @@ def gp_withPad(df, savepath='./',plotpath='./', bands='ugrizY', ts='0000000', fn
         #the magnitude-like array for the sake of the conversion
         y = np.log(f + 1)
         yerr = np.array(row["Flux_Err"]) / np.array(row["Flux"])
-        t_test = np.linspace(t.nanmin, t.nanmax, Npt) #only go from tmin to tmax
+        t_test = np.linspace(t.nanmin, t.nanmax, Nstp) #only go from tmin to tmax
         band = row["Filter"]
         band_idx = pd.Series(row['Filter']).astype('category').cat.codes.values
 
         padL = Npt - len(t_test) #how many observations to we need to tack onto the end?
         #generate spacing
         padT = np.arange(padL)+1 #one-day spacing tacked onto the end of the interpolated sequence
-        matrix = [np.concatenate([t_test, padT]]
+        matrix = [np.concatenate([t_test, padT])]
 
         def build_gp(params):
             time_kernel = tinygp.kernels.Matern32(jnp.exp(params["log_scale"]))
