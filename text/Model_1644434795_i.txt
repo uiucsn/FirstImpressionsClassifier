@@ -1,0 +1,35 @@
+pad = True
+GP = False
+band_stack = i
+bands = ugrizY
+N_bands = 6
+genData = True
+batch_size = 128
+nepochs = 100
+Ntsp = 100
+nGRU = 50
+dropout = 0.2
+randSeed = 42
+timeDistr = True
+Training:
+Epoch 1/100
+113/113 - 14s - loss: 1.9235 - accuracy: 0.2110 - val_loss: 1.7614 - val_accuracy: 0.2062 - 14s/epoch - 127ms/step
+Epoch 2/100
+113/113 - 12s - loss: 1.6557 - accuracy: 0.2943 - val_loss: 1.6463 - val_accuracy: 0.2774 - 12s/epoch - 106ms/step
+Epoch 3/100
+113/113 - 13s - loss: 1.5224 - accuracy: 0.3358 - val_loss: 1.5434 - val_accuracy: 0.3297 - 13s/epoch - 118ms/step
+Epoch 4/100
+113/113 - 12s - loss: 1.4530 - accuracy: 0.3614 - val_loss: 1.4073 - val_accuracy: 0.3993 - 12s/epoch - 109ms/step
+Epoch 5/100
+113/113 - 12s - loss: 1.4055 - accuracy: 0.3830 - val_loss: 1.3696 - val_accuracy: 0.4085 - 12s/epoch - 109ms/step
+Epoch 6/100
+113/113 - 12s - loss: 1.3746 - accuracy: 0.3953 - val_loss: 1.3445 - val_accuracy: 0.4226 - 12s/epoch - 104ms/step
+Epoch 7/100
+113/113 - 12s - loss: 1.3583 - accuracy: 0.4064 - val_loss: 1.3061 - val_accuracy: 0.4452 - 12s/epoch - 103ms/step
+Epoch 8/100
+113/113 - 12s - loss: 1.3450 - accuracy: 0.4125 - val_loss: 1.3017 - val_accuracy: 0.4471 - 12s/epoch - 103ms/step
+Epoch 9/100
+113/113 - 13s - loss: 1.3264 - accuracy: 0.4281 - val_loss: 1.3145 - val_accuracy: 0.4491 - 13s/epoch - 115ms/step
+Epoch 10/100
+113/113 - 12s - loss: 1.3194 - accuracy: 0.4290 - val_loss: 1.2992 - val_accuracy: 0.4624 - 12s/epoch - 106ms/step
+Epoch 11/100

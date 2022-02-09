@@ -1,12 +1,13 @@
-from preprocess import *
 import time
 from contextlib import redirect_stdout
-from gp import *
 import tensorflow as tf
-from plotting import *
 from tensorflow import keras
 from tensorflow.keras import layers, models
+from preprocess import *
+from gp import *
 from rnn import *
+from plotting import *
+
 import pickle
 
 tf.config.optimizer.set_jit(True)

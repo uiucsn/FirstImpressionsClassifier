@@ -9,3 +9,8 @@ Welcome! This package contains a set of simple, rapid, and easily-interpretable 
 and more! See the startup doc tutorial.ipynb to get started. If you have any questions, please reach out to me at _gaglian2@illinois.edu_. 
 
 Note: PHAST can do none of these things yet. 
+
+
+## License
+
+This is open source software licensed under the terms of the MIT license (see [`LICENSE`](LICENSE) for all the details).

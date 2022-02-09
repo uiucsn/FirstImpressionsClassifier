@@ -164,7 +164,7 @@ def runRNN(params={}, metafile='./nongp_3k_truthcatalog.txt', testIDs=[], savepa
     y_test = fullDF_test['Type_ID'].values
 
     #compile the model with specific choices for the log
-    model, params = buildModel(N_class, params)
+    model, params = buildModel(params)
 
     #write all model info to file!
     #write the training and the model summary to file
