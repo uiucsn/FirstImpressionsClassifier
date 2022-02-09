@@ -13,23 +13,43 @@ wvs = np.asarray([3600, 4760, 6215, 7545, 8700, 10150])
 bands = 'ugrizY'
 
 def shift_lc(df):
-    """Short summary.
+    """A code to compute the phase of transient data relative to
+    the time of trigger.
 
     Parameters
     ----------
-    df : type
-        Description of parameter `df`.
+    df : Pandas DataFrame
+        The full dataframe for each event, containing the columns
+        'MJD' and 'MJD_TRIGGER'.
 
     Returns
     -------
-    type
-        Description of returned object.
+    Pandas DataFrame
+        The same dataframe, but with the phase column 'T'.
 
     """
     df['T'] = df['MJD'] - df['MJD_TRIGGER']
     return df
 
 def cut_lc(df, min=-30, max=150):
+    """Short summary.
+
+    Parameters
+    ----------
+    df  : Pandas DataFrame
+        The dataframe containing the photometry of all events.
+    min : float
+        The minimum phase (relative to trigger) at which to truncate photometry.
+    max : float
+        The maximum phase (relative to trigger) at which to truncate photometry.
+
+    Returns
+    -------
+    Pandas DataFrame
+        The same dataframe with truncated data.
+
+    """
+
     for idx, row in df.iterrows():
         Times = row['T']
         Flux =  row['Flux']
@@ -57,27 +77,28 @@ def correct_time_dilation(df):
 
     Parameters
     ----------
-    df : type
-        Description of parameter `df`.
+    df  : Pandas DataFrame
+        The dataframe containing the photometry of all events.
 
     Returns
     -------
-    type
-        Description of returned object.
+    Pandas DataFrame
+        The same dataframe with undilated times.
 
     """
+
     for idx, row in df.iterrows():
         row['T'] = row['T'] / (1.+row.ZCMB)
     return df
 
 def correct_extinction(df, wvs):
-    """Short summary.
+    """Corrects photometry for milky way extinction (requires MWEBV in the pandas dataframe!).
 
     Parameters
     ----------
-    df : type
-        Description of parameter `df`.
-    wvs : type
+    df  : Pandas DataFrame
+        The dataframe containing the photometry of all events.
+    wvs : array-like
         Description of parameter `wvs`.
 
     Returns
@@ -115,6 +136,7 @@ def read_in_LC_data(metafile='./metafile.txt', LC_path='./', format='SNANA'):
     type
         Description of returned object.
     """
+
     LC_list = []
     input_files = glob.glob(LC_path + "/" + "*.DAT")
     if format == 'SNANA':
@@ -149,18 +171,22 @@ def read_in_LC_data(metafile='./metafile.txt', LC_path='./', format='SNANA'):
     return LCs.merge(metatable)
 
 def calc_abs_mags(df, err_fill=1.0):
-    """Short summary.
+    """Converts apparent to absolute magnitudes and
+    fill in missing photometry.
 
     Parameters
     ----------
-    df : type
-        Description of parameter `df`.
+    df       : Pandas DataFrame
+        The dataframe containing the photometry of all events.
+    err_fill : float
+        The dummy uncertainty to report for filled-in values.
 
     Returns
     -------
-    type
-        Description of returned object.
+    Pandas DataFrame
+        The same dataframe with absolute magnitudes.
     """
+
     df['Mag'] = [[np.nan]]*len(df)
     df['Mag_Err'] =  [[np.nan]]*len(df)
     df['Abs_Lim_Mag'] = np.nan
@@ -193,8 +219,8 @@ def stackInputs(df, bands='ugrizY', pad_cadence=2.0):
 
     Parameters
     ----------
-    df : type
-        Description of parameter `df`.
+    df    : Pandas DataFrame
+        The dataframe containing the photometry of all events.
     bands : type
         Description of parameter `bands`.
 
@@ -256,8 +282,8 @@ def stackGPInputs(df, bands='ugrizY'):
 
     Parameters
     ----------
-    df : type
-        Description of parameter `df`.
+    df    : Pandas DataFrame
+        The dataframe containing the photometry of all events.
     bands : type
         Description of parameter `bands`.
 
@@ -265,8 +291,8 @@ def stackGPInputs(df, bands='ugrizY'):
     -------
     type
         Description of returned object.
-
     """
+
     LCs = {}
     #get max length of a matrix
     for idx, row in df.iterrows():
@@ -291,7 +317,22 @@ def stackGPInputs(df, bands='ugrizY'):
             LCs[row.CID] = matrix
     return LCs
 
-def encode_classes(df, verbose=True):
+def encode_classes(df):
+    """Encodes the output classes as integers and returns a
+    dictionary of the encodings.
+
+    Parameters
+    ----------
+    df    : Pandas DataFrame
+        The dataframe containing the photometry of all events.
+
+    Returns
+    -------
+    Pandas DataFrame
+        The same dataframe with encoded column Type_ID.
+    Pandas dict
+        Dictionary of encoded classes.
+    """
     df['Type_ID'] = df['Type'].astype('category').cat.codes
     #some clunky trickery to get the mapping from classes to values
     encoding_dict = df[['Type', 'Type_ID']].drop_duplicates(subset=['Type', 'Type_ID']).sort_values(by='Type_ID').reset_index(drop=True)['Type'].to_dict()

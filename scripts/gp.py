@@ -6,7 +6,7 @@ import jax
 import jax.numpy as jnp
 from io import StringIO
 import matplotlib.pyplot as plt
-
+from plotting import *
 from jax.config import config
 config.update("jax_enable_x64", True)
 bands = 'ugrizY'
@@ -52,7 +52,7 @@ class Multiband(tinygp.kernels.Kernel):
         return self.band_kernel[b1, b2] * self.time_kernel.evaluate(t1, t2)
 
 
-def gp_withPad(df, savepath='./',plotpath='./', bands='ugrizY', Nstp=100, ts='0000000', fn='GPSet'):
+def gp_withPad(df, savepath='./',plotpath='./', bands='ugrizY', Ntstp=100, ts='0000000', fn='GPSet'):
     """Short summary.
 
     Parameters
@@ -89,11 +89,11 @@ def gp_withPad(df, savepath='./',plotpath='./', bands='ugrizY', Nstp=100, ts='00
         #the magnitude-like array for the sake of the conversion
         y = np.log(f + 1)
         yerr = np.array(row["Flux_Err"]) / np.array(row["Flux"])
-        t_test = np.linspace(t.nanmin, t.nanmax, Nstp) #only go from tmin to tmax
+        t_test = np.linspace(np.nanmin(t), np.nanmax(t), Ntstp) #only go from tmin to tmax
         band = row["Filter"]
         band_idx = pd.Series(row['Filter']).astype('category').cat.codes.values
 
-        padL = Npt - len(t_test) #how many observations to we need to tack onto the end?
+        padL = Ntstp - len(t_test) #how many observations to we need to tack onto the end?
         #generate spacing
         padT = np.arange(padL)+1 #one-day spacing tacked onto the end of the interpolated sequence
         matrix = [np.concatenate([t_test, padT])]
@@ -150,7 +150,7 @@ def gp_withPad(df, savepath='./',plotpath='./', bands='ugrizY', Nstp=100, ts='00
             plt.xlabel("Phase from Trigger (Days)")
             plt.ylabel("Flux")
             plt.legend()
-            plt.savefig(plotpath + "/GP_interpolation_%i.png"%row.CID,dpi=200, bbox_inches='tight')
+            plt.savefig(plotpath + "/GP_%i.png"%row.CID,dpi=200, bbox_inches='tight')
 
         stacked = np.vstack(matrix)
         GP_dict[row.CID] = stacked
@@ -210,13 +210,6 @@ def getGPLCs(df, savepath='./',plotpath='./', bands='ugrizY', ts='0000000', fn='
             return tinygp.GaussianProcess(kernel, X, diag=diag, mean=lambda x: params["mean"][x[1]])
 
         #the GP parameters
-        params = {
-            "mean": np.zeros(num_bands),
-            "log_scale": np.log(100.0),
-            "log_diagonal": np.zeros(num_bands),
-            "off_diagonal": np.zeros(((num_bands - 1) * num_bands) // 2),
-            "log_jitter": np.zeros(num_bands),
-        }
         @jax.jit
         def loss(params):
             return -build_gp(params).condition(y)
@@ -232,8 +225,12 @@ def getGPLCs(df, savepath='./',plotpath='./', bands='ugrizY', ts='0000000', fn='
         df_flux_err = []
         df_filt = []
 
+        # make our plots look nice
+        stylePlots()
+
         if idx%50 == 0:
             plt.figure(figsize=(10,7))
+
         for n in np.unique(band_idx):
             m = band_idx == n
             plt.errorbar(t[m], np.exp(y[m])-1,yerr=row['Flux_Err'][m], fmt="o", color=f"C{n}")

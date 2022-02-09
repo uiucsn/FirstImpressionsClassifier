@@ -9,19 +9,19 @@ from tensorflow.keras import layers, models
 import pickle
 
 def merge_two_dicts(x, y):
-    """Short summary.
+    """A quick function to combine dictionaries.
 
     Parameters
     ----------
-    x : type
-        Description of parameter `x`.
-    y : type
-        Description of parameter `y`.
+    x : dict
+        Dictionary 1.
+    y : dict
+        Dictionary 2.
 
     Returns
     -------
-    type
-        Description of returned object.
+    dict
+        The merged dictionary.
 
     """
     z = x.copy()   # start with keys and values of x
@@ -29,29 +29,25 @@ def merge_two_dicts(x, y):
     return z
 
 def buildModel(N_class, params, X_train):
-    """Short summary.
+    """A function to construct the classification RNN.
 
     Parameters
     ----------
     N_class : type
         Description of parameter `N_class`.
+    N_class : type
+        Description of parameter `N_class`.
+    N_class : type
+        Description of parameter `N_class`.
 
     Returns
     -------
-    type
+    model
+        The keras RNN model.
+    params
         Description of returned object.
 
     """
-    paramsNN = {'batch_size':128,
-    'nepochs':100,
-    'Ntsp':100,
-    'nGRU':50,
-    'dropout':0.2,
-    'randSeed':42,
-    'timeDistr':True}
-
-    params = merge_two_dicts(params, paramsNN)
-
     #build the model
     #basic model #1
     model = keras.Sequential()
@@ -75,7 +71,7 @@ def buildModel(N_class, params, X_train):
 #    model.add(layers.Dense(N_class, activation='softmax'))
     model.compile(loss='sparse_categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
 
-    return model, params
+    return model
 
 tf.config.optimizer.set_jit(True)
 

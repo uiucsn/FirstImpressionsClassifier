@@ -10,7 +10,6 @@ Ntsp = 100
 nGRU = 50
 dropout = 0.2
 randSeed = 42
-timeDistr = True
 Training:
 Epoch 1/100
 113/113 - 19s - loss: 1.9793 - accuracy: 0.2029 - val_loss: 1.7521 - val_accuracy: 0.2087 - 19s/epoch - 167ms/step

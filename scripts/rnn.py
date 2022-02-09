@@ -9,38 +9,44 @@ from tensorflow import keras
 from tensorflow.keras import layers, models
 import pickle
 
-def merge_two_dicts(x, y):
-    """Short summary.
+def merge_dicts(x):
+    """A quick function to combine dictionaries.
 
     Parameters
     ----------
-    x : type
-        Description of parameter `x`.
-    y : type
-        Description of parameter `y`.
+    x : list or array-like
+        A list of dictionaries to merge.
 
     Returns
     -------
-    type
-        Description of returned object.
+    dict
+        The merged dictionary.
 
     """
-    z = x.copy()   # start with keys and values of x
-    z.update(y)    # modifies z with keys and values of y
+    z = x[0].copy()   # start with keys and values of x
+    for y in x[1:]:
+        z.update(y)    # modifies z with keys and values of y
     return z
 
 def buildModel(params):
-    """Short summary.
+    """A function to construct the classification RNN. By default, we use a GRU with one dropout and one batch normalization component.
 
     Parameters
     ----------
-    N_class : type
-        Description of parameter `N_class`.
+    params : A dictionary of full params for the run. The ones used by the NN are:
+
+    nGRU (int)       : Number of GRU layers. Each GRU layer has a dropout and a batch
+                       normalization component.
+    nNeurons (int)   : Number of neurons in each GRU layer.
+    randSeed (int)   : Random seed for re-producing the individual layer configurations.
+    Nclass (int)     : Number of transient classes (for the dense layer).
+    dropout (float)  : Dropout fraction in each GRU layer.
+    timeDistr (bool) : Outputs classification predictions at each time step (valuable for real-time classification!)
 
     Returns
     -------
-    type
-        Description of returned object.
+    model
+        The keras RNN model.
 
     """
 
@@ -75,27 +81,29 @@ def buildModel(params):
 #    model.add(layers.Dense(N_class, activation='softmax'))
     model.compile(loss='sparse_categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
 
-    return model, params
+    return model
 
 tf.config.optimizer.set_jit(True)
 
-def runRNN(params={}, metafile='./nongp_3k_truthcatalog.txt', testIDs=[], savepath='/Users/agagliano/Documents/Research/HostClassifier/packages/phast/', outputfn=''):
+def runRNN(params={}, metafile='./nongp_3k_truthcatalog.txt',
+        testIDs=[], datapath='./', savepath='/Users/agagliano/Documents/Research/HostClassifier/packages/phast/',
+        outputfn=''):
     """The code to run the (very basic) RNN model. Can be run using padding only or GP+padding.
 
     Parameters
     ----------
     params : dictionary
-        The parameters used for the run. An example is as follows:
-        params = {'pad': True, 'GP': False,
-        'band_stack': 'g', 'bands':'ugrizY','genData':True}
+        The parameters used for the run, GP, and NN. The dictionary includes:
 
         pad (bool)       : Pad and use one-band inputs (GP param must be False)
         GP  (bool)       : GP-interpolate all bands and pad the tail edge of each LC (pad param must be False)
         band_stack (str) : The single passband to use for the pad-only model.
         bands (str)      : A string listing all passbands, used in the GP model (default is ugrizY)
         genData (bool)   : Re-generates the stacked arrays for input -- if False, reads them from filepath.
+        Ntsp (int)       : The number of time steps to use for interpolation over the flux in each band (only used if GP=True).
         plot (bool)      : Whether to generate a confusion matrix for the model accuracy on the test set.
         verbose (bool)   : Whether to generate output text during training and validation of the RNN.
+        #TODO: Add in the other parameters for the NN and the GP!
 
     metafile : string
         The file containing the metadata for all transients (IDs, class)
@@ -119,7 +127,7 @@ def runRNN(params={}, metafile='./nongp_3k_truthcatalog.txt', testIDs=[], savepa
 
     #all the pre-processing steps!
     if params['genData']:
-        fullDF = read_in_LC_data(metafile, raw_LC_path, format='SNANA')
+        fullDF = read_in_LC_data(metafile, datapath, format='SNANA')
         fullDF = shift_lc(fullDF)
         fullDF = correct_time_dilation(fullDF)
         #fullDF = cut_lc(fullDF)
@@ -127,32 +135,38 @@ def runRNN(params={}, metafile='./nongp_3k_truthcatalog.txt', testIDs=[], savepa
         fullDF = correct_extinction(fullDF, wvs)
     else:
         #checkpoint -- load saved file
+        # TODO -- remove hardcoded path!!
         fullDF = pd.read_csv("/Users/agagliano/Documents/Research/HostClassifier/data/DFwithFirstGPModel.tar.gz")
         fullDF['Flux'] = [np.array(x[1:-1].split()).astype(np.float64) for x in fullDF['Flux']]
         fullDF['Flux_Err'] = [np.array(x[1:-1].split()).astype(np.float64)  for x in fullDF['Flux_Err']]
         fullDF['T'] = [np.array(x[1:-1].split()).astype(np.float64)  for x in fullDF['T']]
         fullDF['MJD'] = [np.array(x[1:-1].split()).astype(np.float64)  for x in fullDF['MJD']]
         stackedInputs = pd.read_pickle('/Users/agagliano/Documents/Research/HostClassifier/data/GP_1644294157.pkl')
+
     fullDF, encoding_dict = encode_classes(fullDF)
     N_class = len(np.unique(list(encoding_dict.keys())))
     params['Nclass'] = N_class
 
     #define a stackedInputs_test and a stackedInputs_train here
-    fullDF_train = fullDF[~fullDF['CID'].isin(testCIDs)]
-    fullDF_test = fullDF[fullDF['CID'].isin(testCIDs)]
+    fullDF_train = fullDF[~fullDF['CID'].isin(testIDs)]
+    fullDF_test = fullDF[fullDF['CID'].isin(testIDs)]
     if params['pad']:
         stackedInputs_test = stackInputs(fullDF_test, params['band_stack'])
         stackedInputs_train = stackInputs(fullDF_train, params['band_stack'])
+
     elif params['GP']:
         if params['genData']:
             #stackedInputs = getGPLCs(fullDF, saveDir=savepath,
             #                    bands='ugrizY', ts=ts, fn='firstGPSet')
             #try out the classification with edge padding
             stackedInputs = gp_withPad(fullDF, savepath=savepath,
-            plotpath='./', bands=params['bands'], Nstp=params['Nstp'], ts=ts, fn='GPSet')
+            plotpath='./', bands=params['bands'], Ntstp=params['Ntstp'], ts=ts, fn='GPSet')
+            #save the pad data
+            with open('stackedInputs_%s_%i.pkl'%(outputfn,ts), 'wb') as handle:
+                pickle.dump(a, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-        stackedInputs_test = {key: stackedInputs[key] for key in testCIDs}
-        stackedInputs_train = {key: stackedInputs[key] for key in set(stackedInputs.keys()) - set(testCIDs)}
+        stackedInputs_test = {key: stackedInputs[key] for key in testIDs}
+        stackedInputs_train = {key: stackedInputs[key] for key in set(stackedInputs.keys()) - set(testIDs)}
 
     fullDF_train = fullDF_train.set_index('CID').loc[list(stackedInputs_train.keys())].reset_index()
     fullDF_test = fullDF_test.set_index('CID').loc[list(stackedInputs_test.keys())].reset_index()

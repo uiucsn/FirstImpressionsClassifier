@@ -4,30 +4,63 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-def makeCM(model=None, X_train=None, X_test=None, y_train=None, y_test=None, encoding_dict=None, fn='gp_rnn_LSSTexp', ts=000000, c='Reds', plotpath='./plot/'):
-    """Short summary.
+def stylePlots():
+    """A quick function to make subsequent plots look nice (requires seaborn).
+    """
+    sns.set_context("talk",font_scale=1.5)
+
+    sns.set_style('white', {'axes.linewidth': 0.5})
+    plt.rcParams['xtick.major.size'] = 15
+    plt.rcParams['ytick.major.size'] = 15
+
+    plt.rcParams['xtick.minor.size'] = 10
+    plt.rcParams['ytick.minor.size'] = 10
+    plt.rcParams['xtick.minor.width'] = 2
+    plt.rcParams['ytick.minor.width'] = 2
+
+    plt.rcParams['xtick.major.width'] = 2
+    plt.rcParams['ytick.major.width'] = 2
+    plt.rcParams['xtick.bottom'] = True
+    plt.rcParams['xtick.top'] = True
+    plt.rcParams['ytick.left'] = True
+    plt.rcParams['ytick.right'] = True
+
+    plt.rcParams['xtick.minor.visible'] = True
+    plt.rcParams['ytick.minor.visible'] = True
+    plt.rcParams['xtick.direction'] = 'in'
+    plt.rcParams['ytick.direction'] = 'in'
+
+    plt.rcParams.update({
+        "text.usetex": True,
+        "font.family": "serif",
+        "font.serif": ["Palatino"],
+    })
+
+def makeCM(model, X_train, X_test, y_train, y_test, encoding_dict, fn='gp_rnn_LSSTexp', ts=000000, c='Reds', plotpath='./plot/'):
+    """A custom code to generate a confusion matrix for a classification model (allows for customization past what the built-in
+    scikit-learn implementation allows).
 
     Parameters
     ----------
-    model : type
-        Description of parameter `model`.
-    Xtrain : type
-        Description of parameter `Xtrain`.
-    Xtest : type
-        Description of parameter `Xtest`.
-    ytrain : type
-        Description of parameter `ytrain`.
-    ytest : type
-        Description of parameter `ytest`.
-    fn : type
-        Description of parameter `fn`.
-    ts : type
-        Description of parameter `ts`.
+    model : keras model object
+        The classification model to evaluate.
+    Xtrain : 2d array-like
+        Features of training set.
+    Xtest : 2d array-like
+        Features of test set.
+    ytrain : 1d array-like
+        Classes of objects in training set.
+    ytest : 1d array-like
+        Classes of objects in test set.
+    fn : str
+        Prefix to add to output filename
+    ts : int
+        The timestamp for the run (used to link plots to verbose output files)
 
     Returns
     -------
-    type
-        Description of returned object.
+    None
+
 
     """
     # make predictions
@@ -45,6 +78,7 @@ def makeCM(model=None, X_train=None, X_test=None, y_train=None, y_test=None, enc
     df_cm.columns.name = 'Predicted Label'
 
     #plot it here:
+    stylePlots()
     plt.figure(figsize = (10,7))
     sns.set(font_scale=2)
     g = sns.heatmap(df_cm, cmap=c, annot=True, fmt=".2f", annot_kws={"size": 30}, linewidths=1, linecolor='black', cbar_kws={"ticks": [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]}, vmin=0.29, vmax=0.91)# font size

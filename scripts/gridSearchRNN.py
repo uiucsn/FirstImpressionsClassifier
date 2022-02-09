@@ -4,108 +4,11 @@ from contextlib import redirect_stdout
 from gp import *
 import tensorflow as tf
 from plotting import *
+from rnn import *
 from tensorflow import keras
 from tensorflow.keras import layers, models
 import pickle
 from sklearn.model_selection import GridSearchCV
-
-
-def merge_two_dicts(x, y):
-    """Short summary.
-
-    Parameters
-    ----------
-    x : type
-        Description of parameter `x`.
-    y : type
-        Description of parameter `y`.
-
-    Returns
-    -------
-    type
-        Description of returned object.
-
-    """
-    z = x.copy()   # start with keys and values of x
-    z.update(y)    # modifies z with keys and values of y
-    return z
-
-def buildModel():
-    """Short summary.
-
-    Parameters
-    ----------
-    N_class : type
-        Description of parameter `N_class`.
-
-    Returns
-    -------
-    type
-        Description of returned object.
-
-    """
-    paramsNN = {'batch_size':128,
-    'nepochs':100,
-    'Ntsp':100,
-    'nGRU':50,
-    'dropout':0.2,
-    'randSeed':42,
-    'timeDistr':False}
-
-    fullDF = pd.read_csv("/Users/agagliano/Documents/Research/HostClassifier/data/DFwithFirstGPModel.tar.gz")
-    stackedInputs = pd.read_pickle('/Users/agagliano/Documents/Research/HostClassifier/data/GP_1644294157.pkl')
-    fullDF, encoding_dict = encode_classes(fullDF)
-    N_class = len(np.unique(list(encoding_dict.keys())))
-
-    params = {'pad': False, 'GP': True,
-    'band_stack': 'g', 'bands':'ugrizY',
-    'N_bands': len(bands),'genData':False, 'genData':False}
-
-    #define a stackedInputs_test and a stackedInputs_train here
-    fullDF_train = fullDF[~fullDF['CID'].isin(testCIDs)]
-    fullDF_test = fullDF[fullDF['CID'].isin(testCIDs)]
-    if params['pad']:
-        stackedInputs_test = stackInputs(fullDF_test, band_stack)
-        stackedInputs_train = stackInputs(fullDF_train, band_stack)
-    elif params['GP']:
-        if params['genData']:
-            stackedInputs = getGPLCs(fullDF, plotpath='/Users/agagliano/Documents/Research/HostClassifier/plot/',
-                                savepath='/Users/agagliano/Documents/Research/HostClassifier/plot/',
-                                bands='ugrizY', ts=ts, fn='firstGPSet')
-        stackedInputs_test = {key: stackedInputs[key] for key in testCIDs}
-        stackedInputs_train = {key: stackedInputs[key] for key in set(stackedInputs.keys()) - set(testCIDs)}
-
-    fullDF_train = fullDF_train.set_index('CID').loc[list(stackedInputs_train.keys())].reset_index()
-    fullDF_test = fullDF_test.set_index('CID').loc[list(stackedInputs_test.keys())].reset_index()
-
-    #set up the train and test sets
-    X_train = np.swapaxes(list(stackedInputs_train.values()), 1, 2)
-
-    params = merge_two_dicts(params, paramsNN)
-
-    #build the model
-    #basic model #1
-    #model = keras.Sequential()
-    #model.add(layers.GRU( params['nGRU'], activation='sigmoid', return_sequences=True))
-    #model.add(layers.Dropout(params['dropout'], seed=params['randSeed']))
-    #model.add(layers.BatchNormalization())
-    #model.add(layers.Dense(N_class, activation='softmax'))
-
-    #basic model #2
-    model = keras.Sequential()
-    model.add(layers.Input(shape=(X_train.shape[1], X_train.shape[2])))
-#    model.add(layers.Masking(mask_value=0.))
-#    model.add(layers.LSTM(paramsNN['nGRU'], return_sequences=True, dropout=paramsNN['dropout']))
-#    model.add(layers.Dropout(paramsNN['dropout'], seed=paramsNN['randSeed']))
-#    model.add(layers.BatchNormalization())
-    model.add(layers.GRU(paramsNN['nGRU'], activation='sigmoid', return_sequences=True, dropout=paramsNN['dropout']))
-    model.add(layers.Dropout(paramsNN['dropout'], seed=paramsNN['randSeed']))
-    model.add(layers.BatchNormalization())
-#    model.add(layers.Dropout(paramsNN['dropout'], seed=paramsNN['randSeed']))
-    model.add(layers.Dense(N_class, activation='softmax'))
-    model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
-
-    return model
 
 tf.config.optimizer.set_jit(True)
 
