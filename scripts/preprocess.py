@@ -224,7 +224,7 @@ def stackInputs(df, bands='ugrizY', pad_cadence=2.0):
             #get GP LCs later -- for now, just pad
             #pad fill
             padLen = maxLen - len(bandMags)
-            abs_mag_lim = df.at[idx, 'Abs_Lim_Mag']
+            abs_mag_lim = df.at[idx, 'Abs_Lim_Mag'].astype(np.float64)
             padR = int(padLen/2)
             padF = padR
             if padLen%2 == 1:
@@ -246,6 +246,48 @@ def stackInputs(df, bands='ugrizY', pad_cadence=2.0):
             stackErrs = np.concatenate([padErr_R, bandErrs, padErr_F])
 
             matrix = np.vstack([stackTimes, stackMags, stackErrs])
+            LCs[row.CID] = matrix
+    return LCs
+
+
+#def getGPLCs(df):
+def stackGPInputs(df, bands='ugrizY'):
+    """Some basic description
+
+    Parameters
+    ----------
+    df : type
+        Description of parameter `df`.
+    bands : type
+        Description of parameter `bands`.
+
+    Returns
+    -------
+    type
+        Description of returned object.
+
+    """
+    LCs = {}
+    #get max length of a matrix
+    for idx, row in df.iterrows():
+        SN = row.CID
+        Time = row['GP_T']
+        Flux = row['GP_Flux']
+        Flux_Err = row['GP_Flux_Err']
+        Filt = row['GP_Filter']
+        #in the GP model, we're at the same time for everything
+        Time = Time[Filt == 'u'] #pick any band, doesn't matter
+        maxLen = len(Time)
+        for band in bands:
+            matrix = np.zeros((maxLen, len(bands)*2+1)) #ugrizY Flux, ugrizY err, time
+            bandFlux =  Flux[Filt==band]
+            bandErrs = Flux_Err[Filt==band]
+
+            #get GP LCs
+            if bands == 'u':
+                matrix = np.vstack([stackTimes, bandFlux, bandErrs])
+            else:
+                matrix = np.vstack([matrix, bandFlux, bandErrs])
             LCs[row.CID] = matrix
     return LCs
 

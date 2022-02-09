@@ -1,0 +1,15 @@
+pad = False
+GP = True
+band_stack = g
+bands = ugrizY
+N_bands = 6
+genData = False
+batch_size = 128
+nepochs = 100
+Ntsp = 100
+nGRU = 50
+dropout = 0.2
+randSeed = 42
+timeDistr = True
+Training:
+Epoch 1/100

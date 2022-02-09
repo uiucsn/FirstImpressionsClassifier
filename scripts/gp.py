@@ -33,25 +33,26 @@ class Multiband(tinygp.kernels.Kernel):
         t2, b2 = X2
         return self.band_kernel[b1, b2] * self.time_kernel.evaluate(t1, t2)
 
-def getGPLCs(df, savepath='./', num_bands=6):
+def getGPLCs(df, savepath='./',plotpath='./', bands='ugrizY', ts='0000000', fn='GPSet'):
     #num_bands = len(np.unique(band_idx))
-    df['GP_T'] = df['T']
-    df['GP_Filter'] = df['Filter']
-    df['GP_Flux'] = df['Flux']
-    df['GP_Flux_Err'] = df['Flux_Err']
     Npt = 100
     tmin = -30
     tmax = 150
+    num_bands = len(bands)
+    GP_dict = {}
+
     for idx, row in df.iterrows():
-        print(idx)
         t = np.array(row["T"])
         f = np.array(row["Flux"])
         f[f<0] = 0 #getting rid of negative flux
+
+        #the magnitude-like array for the sake of the conversion
         y = np.log(f + 1)
         yerr = np.array(row["Flux_Err"]) / np.array(row["Flux"])
         t_test = np.linspace(tmin, tmax, Npt)
         band = row["Filter"]
         band_idx = pd.Series(row['Filter']).astype('category').cat.codes.values
+        matrix = [t_test]
 
         def build_gp(params):
             time_kernel = tinygp.kernels.Matern32(jnp.exp(params["log_scale"]))
@@ -82,31 +83,31 @@ def getGPLCs(df, savepath='./', num_bands=6):
         df_flux_err = []
         df_filt = []
 
-        if idx%100 == 0:
+        if idx%5 == 0:
             plt.figure(figsize=(10,7))
         for n in np.unique(band_idx):
             m = band_idx == n
             plt.errorbar(t[m], np.exp(y[m])-1,yerr=row['Flux_Err'][m], fmt="o", color=f"C{n}")
             mu, var = gp.predict(y, X_test=(t_test, np.full_like(t_test, n, dtype=int)), return_var=True)
             std = np.sqrt(var)
-
             if idx%5 == 0:
                 plt.plot(t_test, np.exp(mu)-1, 'o-', marker='.', ms=2, color=f"C{n}")
-                plt.fill_between(t_test,np.exp(mu - std)-1, np.exp(mu + std)+1, color=f"C{n}", alpha=0.3)
+                plt.fill_between(t_test,np.exp(mu - std)-1, np.exp(mu + std)+1, color=f"C{n}", alpha=0.3, label=bands[n])
 
-            df_t.append(t_test)
-            df_flux.append(np.exp(mu)-1)
-            df_flux_err.append(std)
-            df_filt.append([bands[n]]*len(mu))
+            #going in order of band here--don't forget it!
+            matrix.append(np.exp(mu)-1)
+            matrix.append(std)
 
-        if idx%100 == 0:
+        if idx%5 == 0:
             plt.xlim((t_test[0], t_test[-1]))
             plt.xlabel("Phase from Trigger (Days)")
             plt.ylabel("Flux")
-            plt.savefig(savepath + "/GP_interpolation_%i.png"%row.CID,dpi=200, bbox_inches='tight')
+            plt.legend()
+            plt.savefig(plotpath + "/GP_interpolation_%i.png"%row.CID,dpi=200, bbox_inches='tight')
 
-        df.at[idx, 'GP_T'] =  np.concatenate(df_t)
-        df.at[idx, 'GP_Flux'] = np.concatenate(df_flux)
-        df.at[idx, 'GP_Flux_Err'] = np.concatenate(df_flux_err)
-        df.at[idx, 'GP_Filter'] = np.concatenate(df_filt)
-    return df
+        stacked = np.vstack(matrix)
+        GP_dict[row.CID] = stacked
+
+    with open(savepath + '/%s_%i.pkl'%(fn, ts), 'wb') as f:
+        pickle.dump(GP_dict, f)
+    return GP_dict
