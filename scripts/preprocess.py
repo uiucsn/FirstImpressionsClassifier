@@ -117,59 +117,6 @@ def correct_extinction(df, wvs):
         df.at[idx, 'Mag'] = tempMag
     return df
 
-def read_in_LC_data(metafile='./metafile.txt', LC_path='./', format='SNANA'):
-    """Reads in a directory of SNANA-formatted LC files and outputs a pandas
-       dataframe of class, redshift, extinction, discovery date, and photometry.
-       Borrowed heavily from superraenn (Villar+2019)!
-
-    Parameters
-    ----------
-    metafile : string
-        Description of parameter `metafile`.
-    LC_path : string
-        Description of parameter `LC_path`.
-    format : string
-        Description of parameter `format`.
-
-    Returns
-    -------
-    type
-        Description of returned object.
-    """
-
-    LC_list = []
-    input_files = glob.glob(LC_path + "/" + "*.DAT")
-    if format == 'SNANA':
-        for i, input_file in enumerate(input_files):
-            sn_name = input_file.split("/")[-1].replace(".DAT", "").split("_")[-1].replace("SN", "")
-            try:
-                num = 71
-                t, f, filts, err = np.genfromtxt(input_file,
-                                            usecols=(1, 4, 2, 5), skip_header=num,
-                                            skip_footer=1, unpack=True, dtype=str)
-            except:
-                with open(input_file) as tempFile:
-                    for num, line in enumerate(tempFile, 1):
-                         if 'VARLIST' in line:
-                            break
-                t, f, filts, err = np.genfromtxt(input_file,
-                                             usecols=(1, 4, 2, 5), skip_header=num,
-                                             skip_footer=1, unpack=True, dtype=str)
-            t = np.asarray(t, dtype=float)
-            f = np.asarray(f, dtype=float)
-            err = np.asarray(err, dtype=float)
-
-            #sn_name = obj_names[i]
-            new_LC = pd.DataFrame({'CID':sn_name, 'MJD':[t], 'Flux':[f], 'Flux_Err':[err], 'Filter':[filts]})
-            LC_list.append(new_LC)
-    else:
-        raise ValueError('Sorry, you need to specify an input format.')
-    LCs = pd.concat(LC_list, ignore_index=True)
-    metatable = pd.read_csv(metafile, delim_whitespace=True)
-    metatable['CID'] = np.int64(metatable['CID'])
-    LCs['CID'] = np.int64(LCs['CID'])
-    return LCs.merge(metatable)
-
 def calc_abs_mags(df, err_fill=1.0):
     """Converts apparent to absolute magnitudes and
     fill in missing photometry.
@@ -214,15 +161,15 @@ def calc_abs_mags(df, err_fill=1.0):
     return df
 
 #def getGPLCs(df):
-def stackInputs(df, bands='ugrizY', pad_cadence=2.0):
+def stackInputs(df, params):
     """Some basic description
 
     Parameters
     ----------
     df    : Pandas DataFrame
         The dataframe containing the photometry of all events.
-    bands : type
-        Description of parameter `bands`.
+    params : dict
+        Dictionary of all run params
 
     Returns
     -------
@@ -231,48 +178,70 @@ def stackInputs(df, bands='ugrizY', pad_cadence=2.0):
 
     """
     LCs = {}
-    #get max length of a matrix
-    maxLen = np.nanmax([len(x) for x in df['MJD'].values])
-    for idx, row in df.iterrows():
-        SN = row.CID
-        Time = row['T']
-        Mag = row.Mag
-        Mag_Err = row.Mag_Err
-        Filt = row.Filter
-        for band in bands:
-            matrix = np.zeros((maxLen, 3))
-            if np.nansum(Filt==band) == 0:
-                continue
-            bandTimes = Time[Filt==band]
-            bandMags =  Mag[Filt==band]
-            bandErrs = Mag_Err[Filt==band]
+    if params['GP']:
+        bands = params['bands'] #use all bands if we have gp-interpolation for them!
+        for idx, row in df.iterrows():
+            SN = row.CID
+            Time = row['T']
+            Mag = row.Mag
+            Mag_Err = row.Mag_Err
+            Filt = row.Filter
 
-            #get GP LCs later -- for now, just pad
-            #pad fill
-            padLen = maxLen - len(bandMags)
-            abs_mag_lim = df.at[idx, 'Abs_Lim_Mag'].astype(np.float64)
-            padR = int(padLen/2)
-            padF = padR
-            if padLen%2 == 1:
-                #pad more on the forward end than the back end
-                padF += 1
-
-            padArr_R = [abs_mag_lim]*padR
-            padErr_R = [1.0]*padR
-
-            padArr_F = [abs_mag_lim]*padF
-            padErr_F = [1.0]*padF
-            timePad_R = -np.arange(0,padR)*pad_cadence-pad_cadence + np.nanmin(bandTimes)
-            np.flip(timePad_R)
-            timePad_F = np.arange(0,padF)*pad_cadence + pad_cadence + np.nanmax(bandTimes)
-
-            #combine
-            stackTimes = np.concatenate([timePad_R, bandTimes, timePad_F])
-            stackMags = np.concatenate([padArr_R, bandMags, padArr_F])
-            stackErrs = np.concatenate([padErr_R, bandErrs, padErr_F])
-
-            matrix = np.vstack([stackTimes, stackMags, stackErrs])
+            for i in np.arange(len(bands)):
+                band = bands[i]
+                bandTimes = Time[Filt==band]
+                bandMags =  Mag[Filt==band]
+                bandErrs = Mag_Err[Filt==band]
+                if i==0:
+                    matrix = [bandTimes]
+                else:
+                    matrix.append([bandMags, bandErrs])
+            matrix = np.vstack(matrix)
             LCs[row.CID] = matrix
+    else:
+        bands = params['band_stack']
+        #get max length of a matrix
+        maxLen = np.nanmax([len(x) for x in df['MJD'].values])
+
+        for idx, row in df.iterrows():
+            SN = row.CID
+            Time = row['T']
+            Mag = row.Mag
+            Mag_Err = row.Mag_Err
+            Filt = row.Filter
+
+            for band in bands:
+                matrix = np.zeros((maxLen, 3))
+                if np.nansum(Filt==band) == 0:
+                    continue
+                bandTimes = Time[Filt==band]
+                bandMags =  Mag[Filt==band]
+                bandErrs = Mag_Err[Filt==band]
+
+                padLen = maxLen - len(bandMags)
+                abs_mag_lim = df.at[idx, 'Abs_Lim_Mag'].astype(np.float64)
+                padR = int(padLen/2)
+                padF = padR
+                if padLen%2 == 1:
+                    #pad more on the forward end than the back end
+                    padF += 1
+
+                padArr_R = [abs_mag_lim]*padR
+                padErr_R = [1.0]*padR
+
+                padArr_F = [abs_mag_lim]*padF
+                padErr_F = [1.0]*padF
+                timePad_R = -np.arange(0,padR)*pad_cadence-pad_cadence + np.nanmin(bandTimes)
+                np.flip(timePad_R)
+                timePad_F = np.arange(0,padF)*pad_cadence + pad_cadence + np.nanmax(bandTimes)
+
+                #combine
+                stackTimes = np.concatenate([timePad_R, bandTimes, timePad_F])
+                stackMags = np.concatenate([padArr_R, bandMags, padArr_F])
+                stackErrs = np.concatenate([padErr_R, bandErrs, padErr_F])
+
+                matrix = np.vstack([stackTimes, stackMags, stackErrs])
+                LCs[row.CID] = matrix
     return LCs
 
 

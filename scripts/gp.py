@@ -52,6 +52,21 @@ class Multiband(tinygp.kernels.Kernel):
         return self.band_kernel[b1, b2] * self.time_kernel.evaluate(t1, t2)
 
 
+# Right now the GP DOES NOT have a pad. What it SHOULD have (I think) is the following:
+# Define newTime = np.linspace(-30, 150, 100)
+# Initialize gpF_err = np.ones(100)
+#            gpF = np.zeros(100)
+# Go band-by-band:
+#        For band i, get t0 as np.nanmax(-30, min(bandT))
+#                        tf as np.nanmin(150, max(bandT))
+#        Define gpTime as newTime truncated between t0 and tf, get index i of first value of gpTime in newTime
+#        Run GP and evaluate at gpTime values
+#        Fill gpF and gpF_err starting at i for all values in gpTime
+# DONE if all goes well, you should have 100 points for every band between -30 and 150 days
+# evenly spaced for all observations and without needing to extrapolate.
+# then you don't even need to pass in the time parameter for every LC, reducing the dimensionality!
+#def gp_withPad(df, savepath='./',plotpath='./', bands='ugrizY', Ntstp=100, ts='0000000', fn='GPSet'):
+#will this cause issues on the front end? Potentially. Let's find out.
 def gp_withPad(df, savepath='./',plotpath='./', bands='ugrizY', Ntstp=100, ts='0000000', fn='GPSet'):
     """Short summary.
 
@@ -93,10 +108,14 @@ def gp_withPad(df, savepath='./',plotpath='./', bands='ugrizY', Ntstp=100, ts='0
         band = row["Filter"]
         band_idx = pd.Series(row['Filter']).astype('category').cat.codes.values
 
-        padL = Ntstp - len(t_test) #how many observations to we need to tack onto the end?
-        #generate spacing
-        padT = np.arange(padL)+1 #one-day spacing tacked onto the end of the interpolated sequence
-        matrix = [np.concatenate([t_test, padT])]
+        #padL = Ntstp - len(t_test) #how many observations to we need to tack onto the end?
+        ##generate spacing
+        #padT = np.arange(padL)+1 #one-day spacing tacked onto the end of the interpolated sequence
+        #df_T = np.concatenate([t_test, padT])
+        #matrix = [df_T]
+        #we shouldn't need to pad -- figure this out later
+        padL = 0 # don't do any padding for now
+        matrix = [t_test]
 
         def build_gp(params):
             time_kernel = tinygp.kernels.Matern32(jnp.exp(params["log_scale"]))
@@ -128,6 +147,7 @@ def gp_withPad(df, savepath='./',plotpath='./', bands='ugrizY', Ntstp=100, ts='0
         df_filt = []
 
         if idx%50 == 0:
+            print("Plotting %i...\n"%idx)
             plt.figure(figsize=(10,7))
         for n in np.unique(band_idx):
             m = band_idx == n
@@ -135,18 +155,29 @@ def gp_withPad(df, savepath='./',plotpath='./', bands='ugrizY', Ntstp=100, ts='0
             mu, var = gp.predict(y, X_test=(t_test, np.full_like(t_test, n, dtype=int)), return_var=True)
             std = np.sqrt(var)
             if idx%50 == 0:
-                plt.plot(t_test, np.exp(mu)-1, 'o-', marker='.', ms=2, color=f"C{n}")
+                plt.plot(t_test, np.exp(mu)-1, '.-', ms=2, color=f"C{n}")
                 plt.fill_between(t_test,np.exp(mu - std)-1, np.exp(mu + std)+1, color=f"C{n}", alpha=0.3, label=bands[n])
 
             #going in order of band here--don't forget it! (ugrizY)
             #now pad the end
             padF = np.zeros(padL) #one-day spacing tacked onto the end of the interpolated sequence
             padFerr = np.ones(padL)
-            matrix.append(np.concatenate([np.exp(mu)-1, padF]))
-            matrix.append(np.concatenate([std, padFerr]))
+
+            gp_f = np.concatenate([np.exp(mu)-1, padF])
+            gp_f_err = np.concatenate([std, padFerr])
+
+            matrix.append(gp_f)
+            matrix.append(gp_f_err)
+
+            df_t.append(t[m])
+            df_flux.append(gp_f)
+            df_flux_err.append(gp_f)
+            df_filt.append([bands[n]]*len(t[m]))
 
         if idx%50 == 0:
-            plt.xlim((t_test[0], t_test[-1]))
+            plotmin = np.nanmin([t_test[0], -30])
+            plotmax = np.nanmax([t_test[-1], 150])
+            plt.xlim((plotmin, plotmax))
             plt.xlabel("Phase from Trigger (Days)")
             plt.ylabel("Flux")
             plt.legend()
@@ -155,9 +186,18 @@ def gp_withPad(df, savepath='./',plotpath='./', bands='ugrizY', Ntstp=100, ts='0
         stacked = np.vstack(matrix)
         GP_dict[row.CID] = stacked
 
+        # overwrite the original data (not a great solution, but potentially better
+        # for all the other functions that will use these column names)
+        df.at[idx, 'T'] = np.concatenate(df_t)
+        df.at[idx, 'Filter'] = np.concatenate(df_filt)
+        df.at[idx, 'Flux'] = np.concatenate(df_flux)
+        df.at[idx, 'Flux_Err'] = np.concatenate(df_flux_err)
+
+    #save the dictionary separately just to have them
     with open(savepath + '/%s_%i.pkl'%(fn, ts), 'wb') as f:
         pickle.dump(GP_dict, f)
-    return GP_dict
+
+    return df
 
 def getGPLCs(df, savepath='./',plotpath='./', bands='ugrizY', ts='0000000', fn='GPSet'):
     """Short summary.
@@ -189,6 +229,9 @@ def getGPLCs(df, savepath='./',plotpath='./', bands='ugrizY', ts='0000000', fn='
     tmax = 150
     num_bands = len(bands)
     GP_dict = {}
+
+    # make our plots look nice
+    stylePlots()
 
     for idx, row in df.iterrows():
         t = np.array(row["T"])
@@ -225,9 +268,6 @@ def getGPLCs(df, savepath='./',plotpath='./', bands='ugrizY', ts='0000000', fn='
         df_flux_err = []
         df_filt = []
 
-        # make our plots look nice
-        stylePlots()
-
         if idx%50 == 0:
             plt.figure(figsize=(10,7))
 
@@ -236,8 +276,9 @@ def getGPLCs(df, savepath='./',plotpath='./', bands='ugrizY', ts='0000000', fn='
             plt.errorbar(t[m], np.exp(y[m])-1,yerr=row['Flux_Err'][m], fmt="o", color=f"C{n}")
             mu, var = gp.predict(y, X_test=(t_test, np.full_like(t_test, n, dtype=int)), return_var=True)
             std = np.sqrt(var)
+
             if idx%50 == 0:
-                plt.plot(t_test, np.exp(mu)-1, 'o-', marker='.', ms=2, color=f"C{n}")
+                plt.plot(t_test, np.exp(mu)-1, '.-', ms=2, color=f"C{n}")
                 plt.fill_between(t_test,np.exp(mu - std)-1, np.exp(mu + std)+1, color=f"C{n}", alpha=0.3, label=bands[n])
 
             #going in order of band here--don't forget it!
@@ -249,7 +290,7 @@ def getGPLCs(df, savepath='./',plotpath='./', bands='ugrizY', ts='0000000', fn='
             plt.xlabel("Phase from Trigger (Days)")
             plt.ylabel("Flux")
             plt.legend()
-            plt.savefig(plotpath + "/GP_interpolation_%i.png"%row.CID,dpi=200, bbox_inches='tight')
+            plt.savefig(plotpath + "/GP_%i.png"%row.CID,dpi=200, bbox_inches='tight')
 
         stacked = np.vstack(matrix)
         GP_dict[row.CID] = stacked

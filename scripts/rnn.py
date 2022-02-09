@@ -1,8 +1,8 @@
 import time
 from contextlib import redirect_stdout
+from lcIO import *
 from preprocess import *
 from plotting import *
-from io import *
 from gp import *
 import tensorflow as tf
 from tensorflow import keras
@@ -127,15 +127,28 @@ def runRNN(params={}, metafile='./nongp_3k_truthcatalog.txt',
 
     #all the pre-processing steps!
     if params['genData']:
-        fullDF = read_in_LC_data(metafile, datapath, format='SNANA')
+        fullDF = read_in_LC_data(metafile, datapath, format='SNANA', save=True, ts=ts, savepath=savepath + '/data/')
         fullDF = shift_lc(fullDF)
         fullDF = correct_time_dilation(fullDF)
-        #fullDF = cut_lc(fullDF)
+        if params['GP']:
+            fullDF = gp_withPad(fullDF, savepath=savepath+'/data/',
+            plotpath=savepath+'/plots/GP/', bands=params['bands'], Ntstp=params['Ntstp'], ts=ts, fn='GPSet')
         fullDF = calc_abs_mags(fullDF)
         fullDF = correct_extinction(fullDF, wvs)
+
+        #define a stackedInputs_test and a stackedInputs_train here
+        fullDF_train = fullDF[~fullDF['CID'].isin(testIDs)]
+        fullDF_test = fullDF[fullDF['CID'].isin(testIDs)]
+
+        stackedInputs_test = stackInputs(fullDF_test, params)
+        stackedInputs_train = stackInputs(fullDF_train, params)
+
+        stackedInputs_test = {key: stackedInputs[key] for key in testIDs}
+        stackedInputs_train = {key: stackedInputs[key] for key in set(stackedInputs.keys()) - set(testIDs)}
+
     else:
         #checkpoint -- load saved file
-        # TODO -- remove hardcoded path!!
+        # TODO -- remove hardcoded path!
         fullDF = pd.read_csv("/Users/agagliano/Documents/Research/HostClassifier/data/DFwithFirstGPModel.tar.gz")
         fullDF['Flux'] = [np.array(x[1:-1].split()).astype(np.float64) for x in fullDF['Flux']]
         fullDF['Flux_Err'] = [np.array(x[1:-1].split()).astype(np.float64)  for x in fullDF['Flux_Err']]
@@ -146,27 +159,6 @@ def runRNN(params={}, metafile='./nongp_3k_truthcatalog.txt',
     fullDF, encoding_dict = encode_classes(fullDF)
     N_class = len(np.unique(list(encoding_dict.keys())))
     params['Nclass'] = N_class
-
-    #define a stackedInputs_test and a stackedInputs_train here
-    fullDF_train = fullDF[~fullDF['CID'].isin(testIDs)]
-    fullDF_test = fullDF[fullDF['CID'].isin(testIDs)]
-    if params['pad']:
-        stackedInputs_test = stackInputs(fullDF_test, params['band_stack'])
-        stackedInputs_train = stackInputs(fullDF_train, params['band_stack'])
-
-    elif params['GP']:
-        if params['genData']:
-            #stackedInputs = getGPLCs(fullDF, saveDir=savepath,
-            #                    bands='ugrizY', ts=ts, fn='firstGPSet')
-            #try out the classification with edge padding
-            stackedInputs = gp_withPad(fullDF, savepath=savepath,
-            plotpath='./', bands=params['bands'], Ntstp=params['Ntstp'], ts=ts, fn='GPSet')
-            #save the pad data
-            with open('stackedInputs_%s_%i.pkl'%(outputfn,ts), 'wb') as handle:
-                pickle.dump(a, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
-        stackedInputs_test = {key: stackedInputs[key] for key in testIDs}
-        stackedInputs_train = {key: stackedInputs[key] for key in set(stackedInputs.keys()) - set(testIDs)}
 
     fullDF_train = fullDF_train.set_index('CID').loc[list(stackedInputs_train.keys())].reset_index()
     fullDF_test = fullDF_test.set_index('CID').loc[list(stackedInputs_test.keys())].reset_index()
