@@ -4,7 +4,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-def makeCM(model=None, X_train=None, X_test=None, y_train=None, y_test=None, encoding_dict=None, fn='gp_rnn_LSSTexp', ts=000000):
+def makeCM(model=None, X_train=None, X_test=None, y_train=None, y_test=None, encoding_dict=None, fn='gp_rnn_LSSTexp', ts=000000, c='Reds', plotpath='./plot/'):
     """Short summary.
 
     Parameters
@@ -47,8 +47,8 @@ def makeCM(model=None, X_train=None, X_test=None, y_train=None, y_test=None, enc
     #plot it here:
     plt.figure(figsize = (10,7))
     sns.set(font_scale=2)
-    g = sns.heatmap(df_cm, cmap="Reds", annot=True, fmt=".2f", annot_kws={"size": 30}, linewidths=1, linecolor='black', cbar_kws={"ticks": [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]}, vmin=0.29, vmax=0.91)# font size
+    g = sns.heatmap(df_cm, cmap=c, annot=True, fmt=".2f", annot_kws={"size": 30}, linewidths=1, linecolor='black', cbar_kws={"ticks": [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]}, vmin=0.29, vmax=0.91)# font size
     g.set_xticklabels(g.get_xticklabels(), fontsize = 20)
     g.set_yticklabels(g.get_yticklabels(), fontsize = 20)
     g.set_title("Test Set, Accuracy = %.2f%%"%accTest)
-    plt.savefig(savepath + "/%s_%i.png"%(fn, ts), dpi=200, bbox_inches='tight')
+    plt.savefig(plotpath + "/%s_%i.png"%(fn, ts), dpi=200, bbox_inches='tight')

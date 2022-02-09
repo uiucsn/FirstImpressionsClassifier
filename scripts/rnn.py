@@ -79,18 +79,41 @@ def buildModel(N_class, params, X_train):
 
 tf.config.optimizer.set_jit(True)
 
-raw_LC_path = "/Users/agagliano/Documents/Research/HostClassifier/data/3k_NONGP/lcs_notrigger"
-metafile = "/Users/agagliano/Documents/Research/HostClassifier/data/3k_NONGP/nongp_3k_truthcatalog.txt"
-metafile_Test = "/Users/agagliano/Documents/Research/HostClassifier/data/3k_NONGP/sn_3k_list_unblindedtestSet.txt" #get the CIDs of the train and test sets
-testCIDs = pd.read_csv(metafile_Test, delim_whitespace=True)['CID'].values
-savepath = '/Users/agagliano/Documents/Research/HostClassifier/packages/phast/plots'
+def runRNN(params={}, metafile='./nongp_3k_truthcatalog.txt', testIDs=[], savepath='/Users/agagliano/Documents/Research/HostClassifier/packages/phast/', outputfn='', plot=False):
+    """The code to run the (very basic) RNN model. Can be run using padding only or GP+padding.
 
-params = {'pad': True, 'GP': False,
-'band_stack': 'g', 'bands':'ugrizY','genData':True}
+    Parameters
+    ----------
+    params : dictionary
+        The parameters used for the run. An example is as follows:
+        params = {'pad': True, 'GP': False,
+        'band_stack': 'g', 'bands':'ugrizY','genData':True}
 
-CM_dict = {'u':'Blues', 'g':'Oranges', 'r':'Greens', 'i':'Reds', 'z':'Purples', 'Y':'copper'}
+        pad (bool)       : Pad and use one-band inputs (GP param must be False)
+        GP  (bool)       : GP-interpolate all bands and pad the tail edge of each LC (pad param must be False)
+        band_stack (str) : The single passband to use for the pad-only model.
+        bands (str)      : A string listing all passbands, used in the GP model (default is ugrizY)
+        genData (bool)   : Re-generates the stacked arrays for input -- if False, reads them from filepath.
 
-for band in 'ugrizY':
+    metafile : string
+        The file containing the metadata for all transients (IDs, class)
+    testIDs : array
+        An array of the transient IDs contained in the test set. Used to split the data into train/test split.
+    savepath : string
+        The path to save info on the model architecture and training/validation accuracy during training.
+    outputfn : string
+        The filename to save info.
+    plot : boolean
+        Whether to generate a confusion matrix for the model accuracy on the test set.
+
+    Returns
+    -------
+    None
+        Doesn't return anything!
+
+    """
+    CM_dict = {'u':'Blues', 'g':'Oranges', 'r':'Greens', 'i':'Reds', 'z':'Purples', 'Y':'copper'}
+
     # ts stores the time in seconds
     ts = int(time.time())
 
@@ -122,9 +145,9 @@ for band in 'ugrizY':
         stackedInputs_train = stackInputs(fullDF_train, params['band_stack'])
     elif params['GP']:
         if params['genData']:
-            stackedInputs = getGPLCs(fullDF, plotpath='/Users/agagliano/Documents/Research/HostClassifier/plot/',
-                                savepath='/Users/agagliano/Documents/Research/HostClassifier/plot/',
-                                bands=params['bands'], ts=ts, fn='firstGPSet')
+            stackedInputs = getGPLCs(fullDF, plotpath=savepath + '/plot/',
+                                savepath=savepath + '/data/',
+                                bands='ugrizY', ts=ts, fn='firstGPSet')
         stackedInputs_test = {key: stackedInputs[key] for key in testCIDs}
         stackedInputs_train = {key: stackedInputs[key] for key in set(stackedInputs.keys()) - set(testCIDs)}
 
@@ -142,8 +165,8 @@ for band in 'ugrizY':
 
     #write all model info to file!
     #write the training and the model summary to file
-    textPath = '/Users/agagliano/Documents/Research/HostClassifier/packages/phast/text/'
-    textfile = open(textPath + "/Model_%i_%s.txt"%(ts, band), "wt")
+    textPath = savepath + '/text/'
+    textfile = open(textPath + "/" + outputfn + "_%s_%s.txt"%(ts, band), "wt")
     for key in params.keys():
         textfile.write("{} = {}\n".format(key, params[key]))
     textfile.write("Training:\n")
@@ -154,4 +177,4 @@ for band in 'ugrizY':
         model.summary()
     textfile.close()
 
-    makeCM(model, X_train, X_test, y_train, y_test, encoding_dict, fn='gp_rnn_LSSTexp_%s'%band, ts=ts, plotpath='/Users/agagliano/Documents/Research/HostClassifier/packages/phast/plots/',c=CM_dict[band])
+    makeCM(model, X_train, X_test, y_train, y_test, encoding_dict, fn=outputfn + '_%s'%band, ts=ts, plotpath=savepath+'/plots/',c=CM_dict[band])
