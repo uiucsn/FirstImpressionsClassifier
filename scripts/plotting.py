@@ -31,7 +31,8 @@ def stylePlots():
     plt.rcParams['ytick.direction'] = 'in'
 
     plt.rcParams.update({
-        "text.usetex": True,
+        #"text.usetex": True,turn off for now, not sure where my latex went
+        "text.usetex": False,
         "font.family": "serif",
         "font.serif": ["Palatino"],
     })
@@ -65,7 +66,8 @@ def makeCM(model, X_train, X_test, y_train, y_test, encoding_dict, fn='gp_rnn_LS
     """
     # make predictions
     predictions = model.predict(X_test)
-    predictDF = pd.DataFrame(data=predictions, columns=np.unique(list(encoding_dict.values())))
+    transientClasses = np.unique(list(encoding_dict.values()))
+    predictDF = pd.DataFrame(data=predictions, columns=transientClasses)
     predictDF['PredClass'] = predictDF.idxmax(axis=1)
     predictDF['TrueClass'] = [encoding_dict[x] for x in y_test]
     accTest = np.sum(predictDF['PredClass'] == predictDF['TrueClass'])/len(predictDF)*100
@@ -73,7 +75,7 @@ def makeCM(model, X_train, X_test, y_train, y_test, encoding_dict, fn='gp_rnn_LS
     #create confusion matrix
     CM = confusion_matrix(predictDF['TrueClass'], predictDF['PredClass'], normalize='true')
     fig = plt.figure(figsize=(10.0, 8.0), dpi=300) #frameon=false
-    df_cm = pd.DataFrame(CM, columns=np.unique(predictDF['PredClass'].values), index = np.unique(predictDF['PredClass'].values))
+    df_cm = pd.DataFrame(CM, columns=transientClasses, index =transientClasses)
     df_cm.index.name = 'True Label'
     df_cm.columns.name = 'Predicted Label'
 

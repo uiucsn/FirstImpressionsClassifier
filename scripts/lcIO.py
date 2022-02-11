@@ -65,7 +65,7 @@ def read_in_LC_data(metafile='./metafile.txt', LC_path='./', format='SNANA', sav
         df.to_csv(savepath + "/allRawData_%i.tar.gz"%ts)
     return df
 
-def writeModel(params, model,  X_train, y_train, X_test, y_test,  savepath='./', outputfn='rnn_testing_'):
+def writeModel(params, model,  X_train, y_train, X_test, y_test,  savepath='./', outputfn='rnn_testing_', ts='0000000'):
     """Short summary.
 
     Parameters
@@ -92,8 +92,8 @@ def writeModel(params, model,  X_train, y_train, X_test, y_test,  savepath='./',
 
     """
     textPath = savepath + '/text/'
-    if params['pad']:
-        textfile = open(textPath + "/" + outputfn + "_%s_%s.txt"%(ts, params['band_stack']), "wt")
+    if not params['GP']:
+        textfile = open(textPath + "/" + outputfn + "_%s.txt" % ts, "wt")
     else:
         textfile = open(textPath + "/" + outputfn + "_%s_%s.txt"%(ts, params['band_stack']), "wt")
     for key in params.keys():

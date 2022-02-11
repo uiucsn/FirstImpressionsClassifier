@@ -136,16 +136,23 @@ def runRNN(params={}, metafile='./nongp_3k_truthcatalog.txt',
         fullDF = calc_abs_mags(fullDF)
         fullDF = correct_extinction(fullDF, wvs)
 
+        fullDF, encoding_dict = encode_classes(fullDF)
+        N_class = len(np.unique(list(encoding_dict.keys())))
+        params['Nclass'] = N_class
+
+        df_test = fullDF.sample(frac=params['testFrac'])
+        df_train = fullDF[~fullDF['CID'].isin(df_test['CID'])]
+        #this whole thing is outdated now, just split the dataset up into train and test
         #define a stackedInputs_test and a stackedInputs_train here
-        fullDF_train = fullDF[~fullDF['CID'].isin(testIDs)]
-        fullDF_test = fullDF[fullDF['CID'].isin(testIDs)]
+        #fullDF_train = fullDF[~fullDF['CID'].isin(testIDs)]
+        #fullDF_test = fullDF[fullDF['CID'].isin(testIDs)]
 
-        stackedInputs_test = stackInputs(fullDF_test, params)
-        stackedInputs_train = stackInputs(fullDF_train, params)
+        stackedInputs_test = stackInputs(df_test, params)
+        stackedInputs_train = stackInputs(df_train, params)
+        #stackedInputs = stackInputs(fullDF, params)
 
-        stackedInputs_test = {key: stackedInputs[key] for key in testIDs}
-        stackedInputs_train = {key: stackedInputs[key] for key in set(stackedInputs.keys()) - set(testIDs)}
-
+        #stackedInputs_test = {key: stackedInputs[key] for key in testIDs}
+        #stackedInputs_train = {key: stackedInputs[key] for key in set(stackedInputs.keys()) - set(testIDs)}
     else:
         #checkpoint -- load saved file
         # TODO -- remove hardcoded path!
@@ -156,31 +163,31 @@ def runRNN(params={}, metafile='./nongp_3k_truthcatalog.txt',
         fullDF['MJD'] = [np.array(x[1:-1].split()).astype(np.float64)  for x in fullDF['MJD']]
         stackedInputs = pd.read_pickle('/Users/agagliano/Documents/Research/HostClassifier/data/GP_1644294157.pkl')
 
-    fullDF, encoding_dict = encode_classes(fullDF)
-    N_class = len(np.unique(list(encoding_dict.keys())))
-    params['Nclass'] = N_class
-
-    fullDF_train = fullDF_train.set_index('CID').loc[list(stackedInputs_train.keys())].reset_index()
-    fullDF_test = fullDF_test.set_index('CID').loc[list(stackedInputs_test.keys())].reset_index()
+    #re-order to make sure the X and y sets match
+    df_train = df_train.set_index('CID').loc[list(stackedInputs_train.keys())].reset_index()
+    df_test = df_test.set_index('CID').loc[list(stackedInputs_test.keys())].reset_index()
 
     #set up the train and test sets
     X_train = np.swapaxes(list(stackedInputs_train.values()), 1, 2)
     X_test = np.swapaxes(list(stackedInputs_test.values()), 1, 2)
-    y_train = fullDF_train['Type_ID'].values
-    y_test = fullDF_test['Type_ID'].values
+    y_train = df_train['Type_ID'].values
+    y_test = df_test['Type_ID'].values
 
     #compile the model with specific choices for the log
-    model, params = buildModel(params)
+    model = buildModel(params)
 
     #write all model info to file!
     #write the training and the model summary to file
     if params['verbose']:
-        writeModel(savepath, outputfn, model, params, X_train, y_train, X_test, y_test)
+        writeModel(params, model, X_train, y_train, X_test, y_test, savepath, outputfn, ts)
     else:
         model.fit(X_train, y_train, validation_data=(X_test, y_test), batch_size=params['batch_size'], epochs=params['nepochs'], verbose=2)
 
     if params['plot']:
         fn=outputfn
-        if params['pad']:
-            fn = outputfn+"_%s"%band
-        makeCM(model, X_train, X_test, y_train, y_test, encoding_dict, fn=fn, ts=ts, plotpath=savepath+'/plots/',c=CM_dict[band])
+        if not params['GP']:
+            fn = outputfn+"_%s"%params['band_stack']
+            col = CM_dict[params['band_stack']]
+        else:
+            col = 'Reds'
+        makeCM(model, X_train, X_test, y_train, y_test, encoding_dict, fn=fn, ts=ts, plotpath=savepath+'/plots/',c=col)

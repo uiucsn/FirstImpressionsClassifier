@@ -7,7 +7,10 @@ import jax.numpy as jnp
 from io import StringIO
 import matplotlib.pyplot as plt
 from plotting import *
+import pickle
 from jax.config import config
+
+
 config.update("jax_enable_x64", True)
 bands = 'ugrizY'
 N_bands = len(bands)
@@ -169,10 +172,10 @@ def gp_withPad(df, savepath='./',plotpath='./', bands='ugrizY', Ntstp=100, ts='0
             matrix.append(gp_f)
             matrix.append(gp_f_err)
 
-            df_t.append(t[m])
+            df_t.append(t_test)
             df_flux.append(gp_f)
-            df_flux_err.append(gp_f)
-            df_filt.append([bands[n]]*len(t[m]))
+            df_flux_err.append(gp_f_err)
+            df_filt.append([bands[n]]*len(gp_f_err))
 
         if idx%50 == 0:
             plotmin = np.nanmin([t_test[0], -30])

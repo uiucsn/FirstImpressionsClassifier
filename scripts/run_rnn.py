@@ -32,7 +32,8 @@ paramsRun = {
     'genData':True,
     'verbose':True,
     'plot':True,
-    'Ntstp':100
+    'Ntstp':100,
+    'testFrac':0.2
 }
 
 paramsNN = {
