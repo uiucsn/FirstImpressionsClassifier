@@ -7,21 +7,20 @@ import jax.numpy as jnp
 from io import StringIO
 import matplotlib.pyplot as plt
 from plotting import *
+import multiprocessing
+from helper_functions import *
 import pickle
 from jax.config import config
 
-
 config.update("jax_enable_x64", True)
-bands = 'ugrizY'
-N_bands = len(bands)
 
 class Multiband(tinygp.kernels.Kernel):
-    """Short summary.
+    """The multi-band model for the Gaussian process.
 
     Parameters
     ----------
-    time_kernel : type
-        Description of parameter `time_kernel`.
+    time_kernel : tinygp Kernel
+        A kernel describing the correlations between observations in time.
     diagonal : type
         Description of parameter `diagonal`.
     off_diagonal : type
@@ -54,250 +53,190 @@ class Multiband(tinygp.kernels.Kernel):
         t2, b2 = X2
         return self.band_kernel[b1, b2] * self.time_kernel.evaluate(t1, t2)
 
-
-# Right now the GP DOES NOT have a pad. What it SHOULD have (I think) is the following:
-# Define newTime = np.linspace(-30, 150, 100)
-# Initialize gpF_err = np.ones(100)
-#            gpF = np.zeros(100)
-# Go band-by-band:
-#        For band i, get t0 as np.nanmax(-30, min(bandT))
-#                        tf as np.nanmin(150, max(bandT))
-#        Define gpTime as newTime truncated between t0 and tf, get index i of first value of gpTime in newTime
-#        Run GP and evaluate at gpTime values
-#        Fill gpF and gpF_err starting at i for all values in gpTime
-# DONE if all goes well, you should have 100 points for every band between -30 and 150 days
-# evenly spaced for all observations and without needing to extrapolate.
-# then you don't even need to pass in the time parameter for every LC, reducing the dimensionality!
-#def gp_withPad(df, savepath='./',plotpath='./', bands='ugrizY', Ntstp=100, ts='0000000', fn='GPSet'):
-#will this cause issues on the front end? Potentially. Let's find out.
-def gp_withPad(df, savepath='./',plotpath='./', bands='ugrizY', Ntstp=100, ts='0000000', fn='GPSet'):
-    """Short summary.
+def sngp_slice(slice_dict, params, plotpath='./', bands='XY', GPmethod='100Timestep', fn='GP'):
+    """The light curve gaussian process interpolation function.
 
     Parameters
     ----------
-    df : type
-        Description of parameter `df`.
-    savepath : type
-        Description of parameter `savepath`.
-    plotpath : type
-        Description of parameter `plotpath`.
-    bands : type
-        Description of parameter `bands`.
-    ts : type
-        Description of parameter `ts`.
-    fn : type
-        Description of parameter `fn`.
+    slice_dict : dictionary
+        The dictionary containing the light curve segments (before interpolation).
+    params : dictionary
+        The full dictionary of parameter values (including all parameters for the GP kernel).
+    plotpath : str
+        Path to the dictionary where data will be saved.
+    bands : str
+        The bandpasses over which to compute interpolated light curves.
+    GPmethod : str
+        The GP method to use (`100Timestep` to interpolate 100 points from start to finish of each segment
+         or `0.2Day` to interpolate N points with 0.2-day spacing from start to finish of each segment)
+    fn : str
+        The filename to save dictionaries of interpolated light curves.
 
     Returns
     -------
-    type
-        Description of returned object.
+    Dictionary
+        The dictionary of interpolated values.
 
     """
-    #num_bands = len(np.unique(band_idx))
+
     num_bands = len(bands)
     GP_dict = {}
 
-    #only interpolate from tmin to tmax, and then pad the ends in order to get to 100 points!
-    for idx, row in df.iterrows():
-        t = np.array(row["T"])
-        f = np.array(row["Flux"])
-        f[f<0.] = 0. #getting rid of negative flux
+    GP_dict['GP_T'] = []
+    GP_dict['GP_Flux'] =  []
+    GP_dict['GP_Flux_Err'] =  []
+    GP_dict['GP_Filter'] =  []
 
-        #the magnitude-like array for the sake of the conversion
-        y = np.log(f + 1)
-        yerr = np.array(row["Flux_Err"]) / np.array(row["Flux"])
-        t_test = np.linspace(np.nanmin(t), np.nanmax(t), Ntstp) #only go from tmin to tmax
-        band = row["Filter"]
-        band_idx = pd.Series(row['Filter']).astype('category').cat.codes.values
+    nn_param_names = ['mean', 'log_scale', 'log_diagonal', 'off_diagonal', 'log_jitter']
+    params_nn = {key: value for key, value in params.items() if key in nn_param_names}
 
-        #padL = Ntstp - len(t_test) #how many observations to we need to tack onto the end?
-        ##generate spacing
-        #padT = np.arange(padL)+1 #one-day spacing tacked onto the end of the interpolated sequence
-        #df_T = np.concatenate([t_test, padT])
-        #matrix = [df_T]
-        #we shouldn't need to pad -- figure this out later
-        padL = 0 # don't do any padding for now
-        matrix = [t_test]
+    band_dict = {}
+    ctr = 0
+    for band in bands:
+        band_dict[band] = ctr
+        ctr += 1
 
-        def build_gp(params):
-            time_kernel = tinygp.kernels.Matern32(jnp.exp(params["log_scale"]))
-            kernel = Multiband(time_kernel, jnp.exp(params["log_diagonal"]), params["off_diagonal"])
-            diag = yerr ** 2 + jnp.exp(2 * params["log_jitter"][X[1]])
-            return tinygp.GaussianProcess(kernel, X, diag=diag, mean=lambda x: params["mean"][x[1]])
+    colset = sns.color_palette()
+    cols_bands = [colset[4], colset[0], colset[2], colset[8], colset[1], colset[3]]
+    i = 0
+    paramDF_list = []
+    t = np.array(slice_dict["T"])
+    f = np.array(slice_dict["Flux"])
+    f[f<0.] = 0. #getting rid of negative flux
 
-        #the GP parameters
-        params = {
-            "mean": np.zeros(num_bands),
-            "log_scale": np.log(100.0),
-            "log_diagonal": np.zeros(num_bands),
-            "off_diagonal": np.zeros(((num_bands - 1) * num_bands) // 2),
-            "log_jitter": np.zeros(num_bands),
-        }
-        @jax.jit
-        def loss(params):
-            return -build_gp(params).condition(y)
+    band_idx = np.array([band_dict[x] for x in np.array(slice_dict['Filter']) if x in bands])
 
-        X = (t, band_idx)
+    #the magnitude-like array for the sake of the conversion
+    y = np.log(f + 1)
+    yerr = np.array(slice_dict["Flux_Err"]) / np.array(slice_dict["Flux"])
+    tmin = np.nanmin(t)
+    tmax = np.nanmax(t)
+    if np.nanmin(t) < 0.:
+        tmin = 0.
+    flt = np.array(slice_dict['Filter'])
 
-        solver = jaxopt.ScipyMinimize(fun=loss)
-        soln = solver.run(params)
-        gp = build_gp(soln.params)
+    if GPmethod == '100Timestep':
+        t_test = np.linspace(tmin, tmax, 100)
+    elif GPmethod == '0.2Day':
+        t_test = np.arange(tmin, tmax, 0.2)
 
-        df_t = []
-        df_flux = []
-        df_flux_err = []
-        df_filt = []
+    def build_gp(params):
+        time_kernel = tinygp.kernels.Matern32(jnp.exp(params["log_scale"]))
+        kernel = Multiband(time_kernel, jnp.exp(params["log_diagonal"]), params["off_diagonal"])
+        diag = yerr ** 2 + jnp.exp(2 * params["log_jitter"][X[1]])
+        return tinygp.GaussianProcess(kernel, X, diag=diag, mean=lambda x: params["mean"][x[1]])
 
-        if idx%50 == 0:
-            print("Plotting %i...\n"%idx)
-            plt.figure(figsize=(10,7))
-        for n in np.unique(band_idx):
-            m = band_idx == n
-            plt.errorbar(t[m], np.exp(y[m])-1,yerr=row['Flux_Err'][m], fmt="o", color=f"C{n}")
-            mu, var = gp.predict(y, X_test=(t_test, np.full_like(t_test, n, dtype=int)), return_var=True)
-            std = np.sqrt(var)
-            if idx%50 == 0:
-                plt.plot(t_test, np.exp(mu)-1, '.-', ms=2, color=f"C{n}")
-                plt.fill_between(t_test,np.exp(mu - std)-1, np.exp(mu + std)+1, color=f"C{n}", alpha=0.3, label=bands[n])
+    @jax.jit
+    def loss(params):
+        return -build_gp(params).log_probability(y)
+    X = (t, band_idx)
 
-            #going in order of band here--don't forget it! (ugrizY)
-            #now pad the end
-            padF = np.zeros(padL) #one-day spacing tacked onto the end of the interpolated sequence
-            padFerr = np.ones(padL)
+    solver = jaxopt.ScipyMinimize(fun=loss)
+    soln = solver.run(params_nn)
+    gp = build_gp(soln.params)
 
-            gp_f = np.concatenate([np.exp(mu)-1, padF])
-            gp_f_err = np.concatenate([std, padFerr])
+    paramDict = soln.params.copy()
+    for key, val in paramDict.items():
+        val = np.array(val)
+        if val.size > 1:
+            paramDict[key] = [val]
 
-            matrix.append(gp_f)
-            matrix.append(gp_f_err)
+    df_t = []
+    df_flux = []
+    df_flux_err = []
+    df_filt = []
 
-            df_t.append(t_test)
-            df_flux.append(gp_f)
-            df_flux_err.append(gp_f_err)
-            df_filt.append([bands[n]]*len(gp_f_err))
+    ymax = 0.
+    ymin = 1.e8
+    for n in np.arange(len(bands)):
+        m = np.array(flt) == bands[n]
+        mu, var = gp.predict(y, X_test=(t_test, np.full_like(t_test, n, dtype=int)), return_var=True)
+        std = np.sqrt(var)
+        try:
+            tempymax =np.nanmax(np.exp(y[m])-1)
+            tempymin = np.nanmin(np.exp(y[m])-1)
+            if tempymax > ymax:
+                ymax = tempymax
+            if tempymin < ymin:
+                ymin = tempymin
+        except:
+            print("No values for %s band!\n"%bands[n])
 
-        if idx%50 == 0:
-            plotmin = np.nanmin([t_test[0], -30])
-            plotmax = np.nanmax([t_test[-1], 150])
-            plt.xlim((plotmin, plotmax))
-            plt.xlabel("Phase from Trigger (Days)")
-            plt.ylabel("Flux")
-            plt.legend()
-            plt.savefig(plotpath + "/GP_%i.png"%row.CID,dpi=200, bbox_inches='tight')
+        gp_f =np.exp(mu)-1
+        gp_f_err = np.abs(np.exp(mu + std) - np.exp(mu - std))/2
 
-        stacked = np.vstack(matrix)
-        GP_dict[row.CID] = stacked
+        GP_dict['GP_T'].append(t_test)
+        GP_dict['GP_Flux'].append(gp_f)
+        GP_dict['GP_Filter'].append([bands[n]]*len(gp_f))
+        GP_dict['GP_Flux_Err'].append(gp_f_err)
 
-        # overwrite the original data (not a great solution, but potentially better
-        # for all the other functions that will use these column names)
-        df.at[idx, 'T'] = np.concatenate(df_t)
-        df.at[idx, 'Filter'] = np.concatenate(df_filt)
-        df.at[idx, 'Flux'] = np.concatenate(df_flux)
-        df.at[idx, 'Flux_Err'] = np.concatenate(df_flux_err)
-
-    #save the dictionary separately just to have them
-    with open(savepath + '/%s_%i.pkl'%(fn, ts), 'wb') as f:
-        pickle.dump(GP_dict, f)
-
-    return df
-
-def getGPLCs(df, savepath='./',plotpath='./', bands='ugrizY', ts='0000000', fn='GPSet'):
-    """Short summary.
-
-    Parameters
-    ----------
-    df : type
-        Description of parameter `df`.
-    savepath : type
-        Description of parameter `savepath`.
-    plotpath : type
-        Description of parameter `plotpath`.
-    bands : type
-        Description of parameter `bands`.
-    ts : type
-        Description of parameter `ts`.
-    fn : type
-        Description of parameter `fn`.
-
-    Returns
-    -------
-    type
-        Description of returned object.
-
-    """
-    #num_bands = len(np.unique(band_idx))
-    Npt = 100
-    tmin = -30
-    tmax = 150
-    num_bands = len(bands)
-    GP_dict = {}
-
-    # make our plots look nice
-    stylePlots()
-
-    for idx, row in df.iterrows():
-        t = np.array(row["T"])
-        f = np.array(row["Flux"])
-        f[f<0.] = 0. #getting rid of negative flux
-
-        #the magnitude-like array for the sake of the conversion
-        y = np.log(f + 1)
-        yerr = np.array(row["Flux_Err"]) / np.array(row["Flux"])
-        t_test = np.linspace(tmin, tmax, Npt)
-        band = row["Filter"]
-        band_idx = pd.Series(row['Filter']).astype('category').cat.codes.values
-        matrix = [t_test]
-
-        def build_gp(params):
-            time_kernel = tinygp.kernels.Matern32(jnp.exp(params["log_scale"]))
-            kernel = Multiband(time_kernel, jnp.exp(params["log_diagonal"]), params["off_diagonal"])
-            diag = yerr ** 2 + jnp.exp(2 * params["log_jitter"][X[1]])
-            return tinygp.GaussianProcess(kernel, X, diag=diag, mean=lambda x: params["mean"][x[1]])
-
-        #the GP parameters
-        @jax.jit
-        def loss(params):
-            return -build_gp(params).condition(y)
-
-        X = (t, band_idx)
-
-        solver = jaxopt.ScipyMinimize(fun=loss)
-        soln = solver.run(params)
-        gp = build_gp(soln.params)
-
-        df_t = []
-        df_flux = []
-        df_flux_err = []
-        df_filt = []
-
-        if idx%50 == 0:
-            plt.figure(figsize=(10,7))
-
-        for n in np.unique(band_idx):
-            m = band_idx == n
-            plt.errorbar(t[m], np.exp(y[m])-1,yerr=row['Flux_Err'][m], fmt="o", color=f"C{n}")
-            mu, var = gp.predict(y, X_test=(t_test, np.full_like(t_test, n, dtype=int)), return_var=True)
-            std = np.sqrt(var)
-
-            if idx%50 == 0:
-                plt.plot(t_test, np.exp(mu)-1, '.-', ms=2, color=f"C{n}")
-                plt.fill_between(t_test,np.exp(mu - std)-1, np.exp(mu + std)+1, color=f"C{n}", alpha=0.3, label=bands[n])
-
-            #going in order of band here--don't forget it!
-            matrix.append(np.exp(mu)-1)
-            matrix.append(std)
-
-        if idx%50 == 0:
-            plt.xlim((t_test[0], t_test[-1]))
-            plt.xlabel("Phase from Trigger (Days)")
-            plt.ylabel("Flux")
-            plt.legend()
-            plt.savefig(plotpath + "/GP_%i.png"%row.CID,dpi=200, bbox_inches='tight')
-
-        stacked = np.vstack(matrix)
-        GP_dict[row.CID] = stacked
-
-    with open(savepath + '/%s_%i.pkl'%(fn, ts), 'wb') as f:
-        pickle.dump(GP_dict, f)
+    for key, val in GP_dict.items():
+        GP_dict[key] = np.concatenate(GP_dict[key])
     return GP_dict
+
+def createStackedDict(df):
+    """A function to build the dictionary of interpolated segments from
+    the original dataframe. This function is passed to multiprocessing's Pool
+    to interpolate light curve segments in parallel.
+
+    Parameters
+    ----------
+    df : Pandas DataFrame
+        The full dataset containing the sliced light curve segments to interpolate.
+
+    """
+    ts = int(time.time())
+    GP_dict = {}
+    for idx, row in df.iterrows():
+        try:
+            t = row['T']
+            flux = row['Flux']
+            filter = row['Filter']
+            fluxerr = row['Flux_Err']
+
+            k=0
+
+            CID = row['CID']
+
+            slice_dict = {'T':t, 'Flux':flux, 'Flux_Err':fluxerr, 'Filter':filter}
+
+            final_dict = sngp_slice(slice_dict, params, plotpath='./', bands='XY', GPmethod='100Timestep', fn='GP')
+            matrix = [final_dict['GP_T'][final_dict['GP_Filter'] == 'X']]
+
+            GPfilt = final_dict['GP_Filter']
+            for band in 'XY':
+                matrix = np.vstack([matrix, final_dict['GP_Flux'][GPfilt == band], final_dict['GP_Flux_Err'][GPfilt == band]])
+            GP_dict["%s_%i" %(str(CID), i)] = matrix
+            if len(temp_t) == 0:
+                continue
+        except:
+            print("Error in SN %i"%int(CID))
+    with open('ZTFSims_GP_%i_%s_%i.pkl'%(CID, params['GPMethod'], ts), 'wb') as f:
+        pickle.dump(GP_dict, f)
+
+def gen_gp(df):
+    """Wrapper function to generate the gaussian process-interpolated light curve segments.
+
+    Parameters
+    ----------
+    df : Pandas DataFrame
+        The full dataset containing the sliced light curve segments to interpolate.
+    """
+
+    df = correct_time_dilation(df)
+    df = correct_extinction_flux(df)
+
+    t_init = time.time()
+    print("Time to parallelize!")
+    num_cores = multiprocessing.cpu_count()-4 #leave one free to not freeze machine
+    print("Number of cores is", num_cores)
+    num_partitions = num_cores #number of partitions to split dataframe
+    df_split = np.array_split(df, num_partitions)
+    print("Number of LCs in each dictionary: %i" %len(df_split[0]))
+    pool = multiprocessing.Pool(num_cores)
+    df = pd.concat(pool.map(createStackedDict, df_split))
+    pool.close()
+    pool.join()
+
+    t_final = time.time()
+    print(t_final - t_init)
